@@ -1,5 +1,4 @@
 <?php
-setlocale(LC_ALL, '');
 class DB
 {
     private $database;
