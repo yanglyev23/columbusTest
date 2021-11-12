@@ -1,65 +1,31 @@
 <?php
-class DB
-{
-    private $database;
-
-    public function __construct()
-    {
-        $databaseConfig = require ('connection.php');
-        $this->database = new PDO('mysql:host=' . $databaseConfig['host'] . ';dbname=' . $databaseConfig['dbname'], $databaseConfig['login'], $databaseConfig['password']);
-    }
-
-    public function query($sql, $params = [])
-    {
-        $preparedSql = $this->database->prepare($sql);
-        $preparedSql->execute($params);
-    }
-    public function search($table, $id, $params = [])
-    {
-        return $this->query("SELECT * FROM $table where Code = $id", $params);
-    }
-    public function read($table, $sql = '', $params = [])
-    {
-        return $this->query("SELECT * FROM $table" . $sql, $params);
-    }
-}
-
-function readCSVFile($file='', $delimiter=',')
-{
-    if(!file_exists($file) || !is_readable($file))
-        return FALSE;
-    $header = NULL;
-    $data = array();
-    if (($handle = fopen($file, 'r')) !== FALSE)
-    {
-        while (($row = fgetcsv($handle, 16384, $delimiter)) !== FALSE)
-        {
-            if(!$header)
-                $header = $row;
-            else
-                $data[] = array_combine($header, $row);
-        }
-        fclose($handle);
-    }
-    
-    return $data;
-}
-
+// принимаем переданный из формы файл
 $tmp_name = $_FILES["inputfile"]["tmp_name"];
-$data = readCSVFile($tmp_name);
-$report = [];
-$db = new DB;
+// подключение к базе данных
+$databaseConfig = require ('connection.php');
+$db = new PDO('mysql:host=' . $databaseConfig['host'] . ';dbname=' . $databaseConfig['dbname'], $databaseConfig['login'], $databaseConfig['password']);
+// открываем переданный файл и файл, в котором будем формировать отчёт
+$data = fopen($tmp_name, 'r');
+$report = fopen('files/file.csv', 'w');
+// объявление вспомогательных переменных (массива данных для отчёта и итератора)
+$array = [];
+$key = 1;
+// паттерн для регулярных выражений
 $pattern = '/[^а-яА-Яa-zA-Z0-9.-]+/msiu';
-foreach ($data as $key => $value)
-{
-    $report[$key]['Code'] = $data[$key]['Code'];
-    $report[$key]['Name'] = $data[$key]['Name'];
-    $report[$key]['Error'] = "";
-    if (!preg_match($pattern, $data[$key]['Name'], $matches))
+// копируем шапку из исходного файла в отчёт
+fputcsv($fp, fgetcsv($data));
+// цикл, считываем строку из исходного файла, производим проверку, записываем в бд, записываем в файл отчёта
+while($row = fgetcsv($data)) {
+    // заполняем массив для отчёта данными из исходного файла
+    $array[$key]['Code'] = $row[0];
+    $array[$key]['Name'] = $row[1];
+    $array[$key]['Error'] = "";
+    // производим проверку на запрещённые символы
+    if (!preg_match($pattern, $row[1], $matches))
     {
-        $params = [
-            'id' => $data[$key]['Code'], 
-            'name1' => iconv("CP1251", "UTF-8", $data[$key]['Name'])
+        /*$params = [
+            'id' => $row[0], 
+            'name1' => iconv("CP1251", "UTF-8", $row[1])
         ];
         $put = $db->search('list',3000);
         if (empty($put) == 0){
@@ -67,22 +33,22 @@ foreach ($data as $key => $value)
         }
         else{
             $db->query("UPDATE `list` SET Name1=:name1 WHERE Code=:id", $params);
-        }
+        }*/
     }
     else
     {
+        // запись ошибки в отчёт
         $error = "Недопустимый символ ".$matches[0]." в поле Название";
-        $report[$key]['Error'] = iconv("UTF-8", "CP1251", $error);
+        $array[$key]['Error'] = iconv("UTF-8", "CP1251", $error);
     }
-
+    // запись данных для отчёта в файл
+    fputcsv($fp, $array[$key]);
+    $key++;
 }
-
-$fp = fopen('files/file.csv', 'w');
-
-foreach ($report as $fields) {
-    fputcsv($fp, $fields);
-}
+// закрываем файлы
 fclose($fp);
+fclose($data);
+//автоматическое скачивание файла отчёта
 header("Content-disposition: attachment; filename=file.csv");
 header("Content-type: application/octet-stream");
 header("Content-Description: File Transfer");
